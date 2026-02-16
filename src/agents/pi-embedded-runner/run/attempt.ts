@@ -5,6 +5,7 @@ import { createAgentSession, SessionManager, SettingsManager } from "@mariozechn
 import fs from "node:fs/promises";
 import os from "node:os";
 import type { EmbeddedRunAttemptParams, EmbeddedRunAttemptResult } from "./types.js";
+import { emitAgentEvent } from "../../../infra/agent-events.js";
 import { resolveHeartbeatPrompt } from "../../../auto-reply/heartbeat.js";
 import { resolveChannelCapabilities } from "../../../config/channel-capabilities.js";
 import { getMachineDisplayName } from "../../../infra/machine-name.js";
@@ -570,6 +571,13 @@ export async function runEmbeddedAttempt(
         settingsManager,
       }));
       applySystemPromptOverrideToSession(session, systemPromptText);
+      if (params.runId) {
+        emitAgentEvent({
+          runId: params.runId,
+          stream: "trace",
+          data: { type: "system_prompt", system_prompt: systemPromptText },
+        });
+      }
       if (!session) {
         throw new Error("Embedded agent session missing");
       }

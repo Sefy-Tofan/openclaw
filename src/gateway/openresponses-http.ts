@@ -746,6 +746,15 @@ export async function handleOpenResponsesHttpRequest(
       return;
     }
 
+    if (evt.stream === "trace") {
+      writeSseEvent(res, {
+        type: "response.trace",
+        trace_type: evt.data?.type,
+        system_prompt: evt.data?.system_prompt,
+      });
+      return;
+    }
+
     if (evt.stream === "lifecycle") {
       const phase = evt.data?.phase;
       if (phase === "end" || phase === "error") {
