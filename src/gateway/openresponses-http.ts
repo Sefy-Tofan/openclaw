@@ -263,11 +263,18 @@ function toUsage(
   const cacheRead = value.cacheRead ?? 0;
   const cacheWrite = value.cacheWrite ?? 0;
   const total = value.total ?? input + output + cacheRead + cacheWrite;
-  return {
+  const usage: Usage = {
     input_tokens: Math.max(0, input),
     output_tokens: Math.max(0, output),
     total_tokens: Math.max(0, total),
   };
+  if (cacheRead > 0) {
+    usage.cache_read_input_tokens = cacheRead;
+  }
+  if (cacheWrite > 0) {
+    usage.cache_creation_input_tokens = cacheWrite;
+  }
+  return usage;
 }
 
 function extractUsageFromResult(result: unknown): Usage {
@@ -746,12 +753,56 @@ export async function handleOpenResponsesHttpRequest(
       return;
     }
 
+    if (evt.stream === "tool") {
+      const phase = evt.data?.phase;
+      const name = evt.data?.name;
+      const action = (evt.data?.args as Record<string, unknown>)?.action;
+      // #region agent log
+      fetch("http://127.0.0.1:7245/ingest/ce72cfb6-df5d-4910-8c96-2f833d17fc9d", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          location: "openresponses-http.ts:tool",
+          message: `[OPENCLAW] tool ${phase}`,
+          data: { phase, name, action },
+          trace: "L1-openclaw",
+          timestamp: Date.now(),
+        }),
+      }).catch(() => {});
+      // #endregion
+      if (phase === "start") {
+        writeSseEvent(res, {
+          type: "response.tool.start",
+          name,
+          args: evt.data?.args,
+        } as StreamingEvent);
+      } else if (phase === "result") {
+        writeSseEvent(res, {
+          type: "response.tool.done",
+          name,
+          is_error: evt.data?.isError ?? false,
+        } as StreamingEvent);
+      }
+      return;
+    }
+
     if (evt.stream === "trace") {
-      writeSseEvent(res, {
+      const traceData: Record<string, unknown> = {
         type: "response.trace",
         trace_type: evt.data?.type,
-        system_prompt: evt.data?.system_prompt,
-      });
+      };
+      if (evt.data?.type === "system_prompt") {
+        traceData.system_prompt = evt.data.system_prompt;
+      } else if (evt.data?.type === "llm_input") {
+        traceData.provider = evt.data.provider;
+        traceData.model = evt.data.model;
+        traceData.prompt = evt.data.prompt;
+        traceData.messages = evt.data.messages;
+        traceData.images_count = evt.data.images_count;
+      } else if (evt.data?.type === "llm_output") {
+        traceData.messages = evt.data.messages;
+      }
+      writeSseEvent(res, traceData as StreamingEvent);
       return;
     }
 

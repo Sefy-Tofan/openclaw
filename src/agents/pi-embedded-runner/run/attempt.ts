@@ -24,7 +24,7 @@ import { resolveUserPath } from "../../../utils.js";
 import { normalizeMessageChannel } from "../../../utils/message-channel.js";
 import { isReasoningTagProvider } from "../../../utils/provider-utils.js";
 import { resolveOpenClawAgentDir } from "../../agent-paths.js";
-import { resolveSessionAgentIds } from "../../agent-scope.js";
+import { resolveAgentPromptMode, resolveSessionAgentIds } from "../../agent-scope.js";
 import { createAnthropicPayloadLogger } from "../../anthropic-payload-log.js";
 import { makeBootstrapWarn, resolveBootstrapContextForRun } from "../../bootstrap-files.js";
 import { createCacheTrace } from "../../cache-trace.js";
@@ -415,10 +415,11 @@ export async function runEmbeddedAttempt(
       },
     });
     const isDefaultAgent = sessionAgentId === defaultAgentId;
+    const agentPromptMode = resolveAgentPromptMode(params.config ?? {}, sessionAgentId);
     const promptMode =
       isSubagentSessionKey(params.sessionKey) || isCronSessionKey(params.sessionKey)
         ? "minimal"
-        : "full";
+        : agentPromptMode ?? "full";
     const docsPath = await resolveOpenClawDocsPath({
       workspaceDir: effectiveWorkspace,
       argv1: process.argv[1],
@@ -907,6 +908,8 @@ export async function runEmbeddedAttempt(
           );
         }
 
+        const prePromptMsgCount = activeSession.messages.length;
+
         try {
           // Detect and load images referenced in the prompt for vision-capable models.
           // This eliminates the need for an explicit "view" tool call by injecting
@@ -986,6 +989,21 @@ export async function runEmbeddedAttempt(
               .catch((err) => {
                 log.warn(`llm_input hook failed: ${String(err)}`);
               });
+          }
+
+          if (params.runId) {
+            emitAgentEvent({
+              runId: params.runId,
+              stream: "trace",
+              data: {
+                type: "llm_input",
+                provider: params.provider,
+                model: params.modelId,
+                prompt: effectivePrompt,
+                messages: activeSession.messages,
+                images_count: imageResult.images.length,
+              },
+            });
           }
 
           // Only pass images option if there are actually images to pass
@@ -1076,6 +1094,17 @@ export async function runEmbeddedAttempt(
               : undefined,
         });
         anthropicPayloadLogger?.recordUsage(messagesSnapshot, promptError);
+
+        if (params.runId && messagesSnapshot.length > prePromptMsgCount) {
+          emitAgentEvent({
+            runId: params.runId,
+            stream: "trace",
+            data: {
+              type: "llm_output",
+              messages: messagesSnapshot.slice(prePromptMsgCount),
+            },
+          });
+        }
 
         // Run agent_end hooks to allow plugins to analyze the conversation
         // This is fire-and-forget, so we don't await

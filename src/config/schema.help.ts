@@ -15,6 +15,10 @@ export const FIELD_HELP: Record<string, string> = {
     "Optional allowlist of skills for this agent (omit = all skills; empty = no skills).",
   "agents.list[].skills":
     "Optional allowlist of skills for this agent (omit = all skills; empty = no skills).",
+  "agents.list.*.promptMode":
+    'System prompt mode: "full" (default, all sections) or "embedded" (omits OpenClaw CLI, docs, messaging, reply tags, model aliases, self-update).',
+  "agents.list[].promptMode":
+    'System prompt mode: "full" (default, all sections) or "embedded" (omits OpenClaw CLI, docs, messaging, reply tags, model aliases, self-update).',
   "agents.list[].identity.avatar":
     "Avatar image path (relative to the agent workspace only) or a remote URL/data URL.",
   "discovery.mdns.mode":

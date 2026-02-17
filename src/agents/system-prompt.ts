@@ -9,10 +9,13 @@ import { sanitizeForPromptLiteral } from "./sanitize-for-prompt.js";
 /**
  * Controls which hardcoded sections are included in the system prompt.
  * - "full": All sections (default, for main agent)
+ * - "embedded": Agent embedded in another app — includes Tooling, Tool Call Style, Safety, Skills,
+ *   Workspace, Silent Replies, Heartbeats, Runtime, Context Files. Omits OpenClaw CLI, Documentation,
+ *   Messaging, Reply Tags, Model Aliases, Self-Update.
  * - "minimal": Reduced sections (Tooling, Workspace, Runtime) - used for subagents
  * - "none": Just basic identity line, no sections
  */
-export type PromptMode = "full" | "minimal" | "none";
+export type PromptMode = "full" | "embedded" | "minimal" | "none";
 
 function buildSkillsSection(params: {
   skillsPrompt?: string;
@@ -80,8 +83,8 @@ function buildTimeSection(params: { userTimezone?: string }) {
   return ["## Current Date & Time", `Time zone: ${params.userTimezone}`, ""];
 }
 
-function buildReplyTagsSection(isMinimal: boolean) {
-  if (isMinimal) {
+function buildReplyTagsSection(params: { isMinimal: boolean; isEmbedded: boolean }) {
+  if (params.isMinimal || params.isEmbedded) {
     return [];
   }
   return [
@@ -97,13 +100,14 @@ function buildReplyTagsSection(isMinimal: boolean) {
 
 function buildMessagingSection(params: {
   isMinimal: boolean;
+  isEmbedded: boolean;
   availableTools: Set<string>;
   messageChannelOptions: string;
   inlineButtonsEnabled: boolean;
   runtimeChannel?: string;
   messageToolHints?: string[];
 }) {
-  if (params.isMinimal) {
+  if (params.isMinimal || params.isEmbedded) {
     return [];
   }
   return [
@@ -147,9 +151,14 @@ function buildVoiceSection(params: { isMinimal: boolean; ttsHint?: string }) {
   return ["## Voice (TTS)", hint, ""];
 }
 
-function buildDocsSection(params: { docsPath?: string; isMinimal: boolean; readToolName: string }) {
+function buildDocsSection(params: {
+  docsPath?: string;
+  isMinimal: boolean;
+  isEmbedded: boolean;
+  readToolName: string;
+}) {
   const docsPath = params.docsPath?.trim();
-  if (!docsPath || params.isMinimal) {
+  if (!docsPath || params.isMinimal || params.isEmbedded) {
     return [];
   }
   return [
@@ -355,6 +364,7 @@ export function buildAgentSystemPrompt(params: {
   const messageChannelOptions = listDeliverableMessageChannels().join("|");
   const promptMode = params.promptMode ?? "full";
   const isMinimal = promptMode === "minimal" || promptMode === "none";
+  const isEmbedded = promptMode === "embedded";
   const sandboxContainerWorkspace = params.sandboxInfo?.containerWorkspaceDir?.trim();
   const sanitizedWorkspaceDir = sanitizeForPromptLiteral(params.workspaceDir);
   const sanitizedSandboxContainerWorkspace = sandboxContainerWorkspace
@@ -388,6 +398,7 @@ export function buildAgentSystemPrompt(params: {
   const docsSection = buildDocsSection({
     docsPath: params.docsPath,
     isMinimal,
+    isEmbedded,
     readToolName,
   });
   const workspaceNotes = (params.workspaceNotes ?? []).map((note) => note.trim()).filter(Boolean);
@@ -424,9 +435,13 @@ export function buildAgentSystemPrompt(params: {
           '- session_status: show usage/time/model state and answer "what model are we using?"',
         ].join("\n"),
     "TOOLS.md does not control tool availability; it is user guidance for how to use external tools.",
-    `For long waits, avoid rapid poll loops: use ${execToolName} with enough yieldMs or ${processToolName}(action=poll, timeout=<ms>).`,
-    "If a task is more complex or takes longer, spawn a sub-agent. Completion is push-based: it will auto-announce when done.",
-    "Do not poll `subagents list` / `sessions_list` in a loop; only check status on-demand (for intervention, debugging, or when explicitly asked).",
+    ...(isEmbedded
+      ? []
+      : [
+          `For long waits, avoid rapid poll loops: use ${execToolName} with enough yieldMs or ${processToolName}(action=poll, timeout=<ms>).`,
+          "If a task is more complex or takes longer, spawn a sub-agent. Completion is push-based: it will auto-announce when done.",
+          "Do not poll `subagents list` / `sessions_list` in a loop; only check status on-demand (for intervention, debugging, or when explicitly asked).",
+        ]),
     "",
     "## Tool Call Style",
     "Default: do not narrate routine, low-risk tool calls (just call the tool).",
@@ -435,20 +450,24 @@ export function buildAgentSystemPrompt(params: {
     "Use plain human language for narration unless in a technical context.",
     "",
     ...safetySection,
-    "## OpenClaw CLI Quick Reference",
-    "OpenClaw is controlled via subcommands. Do not invent commands.",
-    "To manage the Gateway daemon service (start/stop/restart):",
-    "- openclaw gateway status",
-    "- openclaw gateway start",
-    "- openclaw gateway stop",
-    "- openclaw gateway restart",
-    "If unsure, ask the user to run `openclaw help` (or `openclaw gateway --help`) and paste the output.",
-    "",
+    ...(isEmbedded
+      ? []
+      : [
+          "## OpenClaw CLI Quick Reference",
+          "OpenClaw is controlled via subcommands. Do not invent commands.",
+          "To manage the Gateway daemon service (start/stop/restart):",
+          "- openclaw gateway status",
+          "- openclaw gateway start",
+          "- openclaw gateway stop",
+          "- openclaw gateway restart",
+          "If unsure, ask the user to run `openclaw help` (or `openclaw gateway --help`) and paste the output.",
+          "",
+        ]),
     ...skillsSection,
     ...memorySection,
-    // Skip self-update for subagent/none modes
-    hasGateway && !isMinimal ? "## OpenClaw Self-Update" : "",
-    hasGateway && !isMinimal
+    // Skip self-update for subagent/none/embedded modes
+    hasGateway && !isMinimal && !isEmbedded ? "## OpenClaw Self-Update" : "",
+    hasGateway && !isMinimal && !isEmbedded
       ? [
           "Get Updates (self-update) is ONLY allowed when the user explicitly asks for it.",
           "Do not run config.apply or update.run unless the user explicitly requests an update or config change; if it's not explicit, ask first.",
@@ -456,19 +475,21 @@ export function buildAgentSystemPrompt(params: {
           "After restart, OpenClaw pings the last active session automatically.",
         ].join("\n")
       : "",
-    hasGateway && !isMinimal ? "" : "",
+    hasGateway && !isMinimal && !isEmbedded ? "" : "",
     "",
-    // Skip model aliases for subagent/none modes
-    params.modelAliasLines && params.modelAliasLines.length > 0 && !isMinimal
+    // Skip model aliases for subagent/none/embedded modes
+    params.modelAliasLines && params.modelAliasLines.length > 0 && !isMinimal && !isEmbedded
       ? "## Model Aliases"
       : "",
-    params.modelAliasLines && params.modelAliasLines.length > 0 && !isMinimal
+    params.modelAliasLines && params.modelAliasLines.length > 0 && !isMinimal && !isEmbedded
       ? "Prefer aliases when specifying model overrides; full provider/model is also accepted."
       : "",
-    params.modelAliasLines && params.modelAliasLines.length > 0 && !isMinimal
+    params.modelAliasLines && params.modelAliasLines.length > 0 && !isMinimal && !isEmbedded
       ? params.modelAliasLines.join("\n")
       : "",
-    params.modelAliasLines && params.modelAliasLines.length > 0 && !isMinimal ? "" : "",
+    params.modelAliasLines && params.modelAliasLines.length > 0 && !isMinimal && !isEmbedded
+      ? ""
+      : "",
     userTimezone
       ? "If you need the current date, time, or day of week, run session_status (📊 session_status)."
       : "",
@@ -530,9 +551,10 @@ export function buildAgentSystemPrompt(params: {
     "## Workspace Files (injected)",
     "These user-editable files are loaded by OpenClaw and included below in Project Context.",
     "",
-    ...buildReplyTagsSection(isMinimal),
+    ...buildReplyTagsSection({ isMinimal, isEmbedded }),
     ...buildMessagingSection({
       isMinimal,
+      isEmbedded,
       availableTools,
       messageChannelOptions,
       inlineButtonsEnabled,

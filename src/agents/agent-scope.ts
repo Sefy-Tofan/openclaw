@@ -20,6 +20,7 @@ type ResolvedAgentConfig = {
   agentDir?: string;
   model?: AgentEntry["model"];
   skills?: AgentEntry["skills"];
+  promptMode?: AgentEntry["promptMode"];
   memorySearch?: AgentEntry["memorySearch"];
   humanDelay?: AgentEntry["humanDelay"];
   heartbeat?: AgentEntry["heartbeat"];
@@ -114,6 +115,7 @@ export function resolveAgentConfig(
         ? entry.model
         : undefined,
     skills: Array.isArray(entry.skills) ? entry.skills : undefined,
+    promptMode: entry.promptMode,
     memorySearch: entry.memorySearch,
     humanDelay: entry.humanDelay,
     heartbeat: entry.heartbeat,
@@ -130,6 +132,17 @@ export function resolveAgentSkillsFilter(
   agentId: string,
 ): string[] | undefined {
   return normalizeSkillFilter(resolveAgentConfig(cfg, agentId)?.skills);
+}
+
+export function resolveAgentPromptMode(
+  cfg: OpenClawConfig,
+  agentId: string,
+): "full" | "embedded" | undefined {
+  const raw = resolveAgentConfig(cfg, agentId)?.promptMode;
+  if (raw === "full" || raw === "embedded") {
+    return raw;
+  }
+  return undefined;
 }
 
 export function resolveAgentModelPrimary(cfg: OpenClawConfig, agentId: string): string | undefined {

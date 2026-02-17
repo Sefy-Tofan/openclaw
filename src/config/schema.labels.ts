@@ -24,6 +24,8 @@ export const FIELD_LABELS: Record<string, string> = {
   "diagnostics.cacheTrace.includeSystem": "Cache Trace Include System",
   "agents.list.*.identity.avatar": "Identity Avatar",
   "agents.list.*.skills": "Agent Skill Filter",
+  "agents.list.*.promptMode": "Agent Prompt Mode",
+  "agents.list[].promptMode": "Agent Prompt Mode",
   "gateway.remote.url": "Remote Gateway URL",
   "gateway.remote.sshTarget": "Remote Gateway SSH Target",
   "gateway.remote.sshIdentity": "Remote Gateway SSH Identity",

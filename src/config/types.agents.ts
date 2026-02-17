@@ -27,6 +27,8 @@ export type AgentConfig = {
   model?: AgentModelConfig;
   /** Optional allowlist of skills for this agent (omit = all skills; empty = none). */
   skills?: string[];
+  /** System prompt mode: "full" (default) or "embedded" (omits OpenClaw infrastructure sections). */
+  promptMode?: "full" | "embedded";
   memorySearch?: MemorySearchConfig;
   /** Human-like delay between block replies for this agent. */
   humanDelay?: HumanDelayConfig;
