@@ -67,8 +67,12 @@ function buildContextPruningExtension(params: {
   };
 }
 
-function resolveCompactionMode(cfg?: OpenClawConfig): "default" | "safeguard" {
-  return cfg?.agents?.defaults?.compaction?.mode === "safeguard" ? "safeguard" : "default";
+function resolveCompactionMode(cfg?: OpenClawConfig): "off" | "default" | "safeguard" {
+  const mode = cfg?.agents?.defaults?.compaction?.mode;
+  if (mode === "off" || mode === "safeguard") {
+    return mode;
+  }
+  return "default";
 }
 
 export function buildEmbeddedExtensionPaths(params: {

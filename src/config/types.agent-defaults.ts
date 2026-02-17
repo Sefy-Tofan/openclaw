@@ -243,7 +243,7 @@ export type AgentDefaultsConfig = {
   };
 };
 
-export type AgentCompactionMode = "default" | "safeguard";
+export type AgentCompactionMode = "off" | "default" | "safeguard";
 
 export type AgentCompactionConfig = {
   /** Compaction summarization mode. */
